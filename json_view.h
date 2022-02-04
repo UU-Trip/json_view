@@ -2,19 +2,17 @@
 
 #include <algorithm>
 #include <charconv>
-#include <cwctype>
+//#include <cwctype>
 #include <iterator>
 #include <ostream>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
-namespace {
-template <typename enum_class_t> constexpr auto e_val(enum_class_t val) {
-    return static_cast<std::underlying_type_t<enum_class_t>>(val);
-}
-}
 template <typename char_t> class json_view {
+    template <typename enum_class_t> constexpr static auto e_val(enum_class_t val) {
+        return static_cast<std::underlying_type_t<enum_class_t>>(val);
+    }
     enum class syntax : char_t {
         object_open      = '{',
         object_close     = '}',
@@ -130,7 +128,7 @@ template <typename char_t> class json_view {
             }
             return *this;
         }
-        const std::basic_string_view<char_t> data;
+        std::basic_string_view<char_t> data;
         std::size_t index;
     };
 public:
@@ -217,7 +215,7 @@ private:
         return data.substr(first, std::min(data.size(), last + 1) - first);
     }
 private:
-    const std::basic_string_view<char_t> data;
+    std::basic_string_view<char_t> data;
 };
 using json_str_view = json_view<char>;
 using json_wstr_view = json_view<wchar_t>;
