@@ -207,8 +207,18 @@ public:
         }
         return result;
     }
+    float to_float() const {
+        try {
+            return std::stof(std::string(string()));
+        } catch(std::exception& e) {
+            return 0;
+        }
+    }
     friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
         return os << rhs.data;
+    }
+    operator std::basic_string<char_t>() {
+        return std::basic_string<char_t>(string());
     }
 private:
     std::basic_string_view<char_t> substr(std::size_t first, std::size_t last) const {
