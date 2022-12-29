@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <charconv>
-//#include <cwctype>
 #include <iterator>
 #include <ostream>
 #include <string_view>
@@ -10,8 +9,9 @@
 #include <utility>
 
 template <typename char_t> class json_view {
-    template <typename enum_class_t> constexpr static auto e_val(enum_class_t val) {
-        return static_cast<std::underlying_type_t<enum_class_t>>(val);
+    template <typename enum_class_t>
+    constexpr static auto e_val(enum_class_t&& val) {
+        return static_cast<std::underlying_type_t<std::decay_t<enum_class_t>>>(std::forward<enum_class_t>(val));
     }
     enum class syntax : char_t {
         object_open      = '{',
@@ -23,28 +23,28 @@ template <typename char_t> class json_view {
         string_delimiter = '"',
         escape           = '\\'
     };
-    struct reader {
-        reader(std::basic_string_view<char_t> data, std::size_t index = 0)
+    struct fetch {
+        constexpr fetch(std::basic_string_view<char_t> data, std::size_t index = 0)
         : data{data}, index{index}
         {}
-        reader first() const {
+        constexpr fetch first() const {
             std::size_t pos{index};
             while ((pos != data.size()) && std::iswspace(data.at(pos))) {
                 ++pos;
             }
             return {data, pos};
         }
-        reader next() const {
-            return reader(data, std::min(index + 1, data.size())).first();
+        constexpr fetch next() const {
+            return fetch(data, std::min(index + 1, data.size())).first();
         }
-        reader next(syntax c) const {
-            reader r{next()};
+        constexpr fetch next(syntax c) const {
+            fetch r{next()};
             while ((r != data.size()) && (r != c)) {
                 r = r.next();
             }
             return r;
         }
-        reader eos() const {
+        constexpr fetch end_of_section() const {
             std::size_t pos{index};
             if (!data.empty()) {
                 if (data.at(pos) == e_val(syntax::string_delimiter)) {
@@ -59,7 +59,7 @@ template <typename char_t> class json_view {
                     while(pos != data.size()) {
                         switch(data.at(pos)) {
                             case e_val(syntax::string_delimiter):
-                                pos = reader(data, pos).eos();
+                                pos = fetch(data, pos).end_of_section();
                                 break;
                             case e_val(syntax::object_open):
                             case e_val(syntax::array_open):
@@ -78,19 +78,19 @@ template <typename char_t> class json_view {
             }
             return {data};
         }
-        bool operator==(syntax c) const {
+        constexpr bool operator==(syntax c) const {
             return (index < data.size()) && (data.at(index) == e_val(c));
         }
-        bool operator!=(syntax c) const {
+        constexpr bool operator!=(syntax c) const {
             return !operator==(c);
         }
-        bool operator==(std::size_t pos) const {
+        constexpr bool operator==(std::size_t pos) const {
             return index == pos;
         }
-        bool operator!=(std::size_t pos) const {
+        constexpr bool operator!=(std::size_t pos) const {
             return !operator==(pos);
         }
-        operator std::size_t() const {
+        constexpr operator std::size_t() const {
             return index;
         }
         std::basic_string_view<char_t> data;
@@ -102,22 +102,22 @@ template <typename char_t> class json_view {
         using value_type = json_view;
         using reference = void;
         using pointer = void;
-        iterator(std::basic_string_view<char_t> data)
-        : data{data}, index{std::min(data.size(), reader(data).first() + 1)}
+        constexpr iterator(std::basic_string_view<char_t> data)
+        : data{data}, index{std::min(data.size(), fetch(data).first() + 1)}
         {}
-        json_view operator*() const {
+        constexpr json_view operator*() const {
             return data.substr(std::min(data.size(), index), ((((++(iterator(*this))).index - 1) - index)));
         }
-        bool operator!=(const iterator& rhs) const {
+        constexpr bool operator!=(const iterator& rhs) const {
             return (index != rhs.index);
         }
-        iterator& operator++() {
+        constexpr iterator& operator++() {
             for (; index < data.size(); ++index) {
                 switch(data.at(index)) {
                     case e_val(syntax::string_delimiter):
                     case e_val(syntax::object_open):
                     case e_val(syntax::array_open):
-                        index = reader(data, index).eos();
+                        index = fetch(data, index).end_of_section();
                         break;
                     case e_val(syntax::comma):
                         ++index;
@@ -132,61 +132,61 @@ template <typename char_t> class json_view {
         std::size_t index;
     };
 public:
-    json_view(std::basic_string_view<char_t> data)
+    constexpr json_view(std::basic_string_view<char_t> data)
     : data{data} {}
-    iterator begin() const {
+    constexpr iterator begin() const {
         return data;
     }
-    iterator end() const {
+    constexpr iterator end() const {
         iterator it{data};
         it.index = data.size();
         return it;
     }
-    std::size_t size() const {
+    constexpr std::size_t size() const {
         return std::distance(begin(), end());
     }
-    json_view key() const {
-        reader first{reader(data).first()};
-        reader last{first.eos()};
+    constexpr json_view key() const {
+        fetch first{fetch(data).first()};
+        fetch last{first.end_of_section()};
         if (last.next(syntax::colon) != data.size()) {
             return substr(first, last);
         }
         return data.substr(0, 0);
     }
-    json_view value() const {
-        reader first{reader(data).first()};
-        reader last{first.eos()};
+    constexpr json_view value() const {
+        fetch first{fetch(data).first()};
+        fetch last{first.end_of_section()};
         if (last.next(syntax::colon) != data.size()) {
-            reader start{last.next(syntax::colon).next()};
-            return substr(start, start.eos());
+            fetch start{last.next(syntax::colon).next()};
+            return substr(start, start.end_of_section());
         }
         return substr(first, last);
     }
-    json_view at(std::basic_string_view<char_t> key) const {
+    constexpr json_view at(std::basic_string_view<char_t> key) const {
         for (auto view : *this) {
-            if (view.key().string() == key) {
+            if (view.key().string_view() == key) {
                 return view.value();
             }
         }
         return data.substr(0, 0);
     }
-    json_view at(std::size_t index) const {
+    constexpr json_view at(std::size_t index) const {
         iterator it{data};
         for (std::size_t i{0}; i < index; ++i) {
             ++it;
         }
         return *it;
     }
-    json_view operator[](std::basic_string_view<char_t> key) const {
+    constexpr json_view operator[](std::basic_string_view<char_t> key) const {
         return at(key);
     }
-    json_view operator[](std::size_t index) const {
+    constexpr json_view operator[](std::size_t index) const {
         return at(index);
     }
-    std::basic_string_view<char_t> string() const {
+    constexpr std::basic_string_view<char_t> string_view() const {
         if (!data.empty()) {
-            reader first{reader(data).first()};
-            reader last{first.eos()};
+            fetch first{fetch(data).first()};
+            fetch last{first.end_of_section()};
             if (last.next() == data.size()) {
                 if (data.at(first) == e_val(syntax::string_delimiter)) {
                     return substr(first + 1, last - 1);
@@ -196,32 +196,35 @@ public:
         }
         return data;
     }
-    bool boolean() const {
-        return (string() == "true");
+    constexpr std::basic_string<char_t> string() const {
+        return std::basic_string<char_t>(string_view());
     }
-    int64_t integer() const {
+    constexpr bool boolean() const {
+        return (string_view() == "true");
+    }
+    constexpr int64_t integer() const {
         int64_t result{0};
         if (!data.empty()) {
-            auto str{string()};
+            auto str{string_view()};
             std::from_chars(str.begin(), str.end(), result);
         }
         return result;
     }
-    float to_float() const {
+    constexpr float floating_point() const {
         try {
-            return std::stof(std::string(string()));
+            return std::stof(string());
         } catch(std::exception& e) {
             return 0;
         }
     }
-    friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
+    constexpr friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
         return os << rhs.data;
     }
-    operator std::basic_string<char_t>() {
-        return std::basic_string<char_t>(string());
+    constexpr operator std::basic_string<char_t>() const {
+        return string();
     }
 private:
-    std::basic_string_view<char_t> substr(std::size_t first, std::size_t last) const {
+    constexpr std::basic_string_view<char_t> substr(std::size_t first, std::size_t last) const {
         return data.substr(first, std::min(data.size(), last + 1) - first);
     }
 private:
