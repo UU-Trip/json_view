@@ -134,6 +134,16 @@ template <typename char_t> class json_view {
 public:
     constexpr json_view(std::basic_string_view<char_t> data)
     : data{data} {}
+    constexpr json_view(json_view&& other)
+    : data{std::move(other.data)} {}
+    constexpr json_view(const json_view& other)
+    : json_view(std::move(other)) {}
+    constexpr json_view& operator=(json_view&& other) {
+        data = std::move(other.data);
+    }
+    constexpr json_view& operator=(json_view other) {
+        *this = std::move(other);
+    }
     constexpr iterator begin() const {
         return data;
     }
@@ -206,7 +216,11 @@ public:
         int64_t result{0};
         if (!data.empty()) {
             auto str{string_view()};
-            std::from_chars(str.begin(), str.end(), result);
+            if constexpr (std::is_same_v<char_t, char>) {
+                std::from_chars(str.begin(), str.end(), result);
+            } else {
+                result = std::stoll(string());
+            }
         }
         return result;
     }
@@ -217,11 +231,11 @@ public:
             return 0;
         }
     }
-    constexpr friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
-        return os << rhs.data;
-    }
     constexpr operator std::basic_string<char_t>() const {
         return string();
+    }
+    constexpr friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
+        return os << rhs.data;
     }
 private:
     constexpr std::basic_string_view<char_t> substr(std::size_t first, std::size_t last) const {
