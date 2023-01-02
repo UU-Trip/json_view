@@ -64,39 +64,64 @@ template <typename char_t> class json_view {
                     return {data, it};
                 }
             }
-            return data;
+            return {data, data.end()};
+        }
+        constexpr fetch end_of_token() const {
+            if (!data.empty()) {
+                if (*iter == e_val(syntax::string_delimiter)) {
+                    return end_of_string();
+                } else {
+                    auto it = std::find_if(iter, data.end(), [](char_t c){
+                        constexpr std::array end{syntax::array_close, syntax::object_close, syntax::comma};
+                        return constexpr_iswspace(c) || std::any_of(end.begin(), end.end(), [c](auto s) { return c == e_val(s); });
+                    });
+                    return {data, it - 1UL};
+                }
+            }
+            return {data, data.end()};
+        }
+        constexpr fetch end_of_container() const {
+            int depth{0};
+            auto it = iter;
+            for (; it <= data.end(); ++it) {
+                switch(*it) {
+                    case e_val(syntax::string_delimiter):
+                        it = fetch(data, it).end_of_string();
+                        break;
+                    case e_val(syntax::object_open):
+                    case e_val(syntax::array_open):
+                        ++depth;
+                        break;
+                    case e_val(syntax::object_close):
+                    case e_val(syntax::array_close):
+                        if (--depth <= 0) {
+                            return {data, it};
+                        }
+                        break;
+                    case e_val(syntax::comma):
+                        if (depth <= 0) {
+                            return {data, it - 1UL};
+                        }
+                        break;
+                    case e_val(syntax::colon):
+                    default:
+                        break;
+                }
+            }
+            return {data, it};
         }
         constexpr fetch end_of_section() const {
-            if ((!data.empty()) && (*iter == e_val(syntax::string_delimiter))) {
-                return end_of_string();
-            } else {
-                int depth{0};
-                auto it = iter;
-                for (; it <= data.end(); ++it) {
-                    switch(*it) {
-                        case e_val(syntax::string_delimiter):
-                            it = fetch(data, it).end_of_string();
-                            break;
-                        case e_val(syntax::object_open):
-                        case e_val(syntax::array_open):
-                            ++depth;
-                            break;
-                        case e_val(syntax::object_close):
-                        case e_val(syntax::array_close):
-                            if (--depth <= 0) {
-                                return {data, it};
-                            }
-                            break;
-                        case e_val(syntax::comma):
-                            if (depth <= 0) {
-                                return {data, it - 1UL};
-                            }
-                        case e_val(syntax::colon):
-                        default:
-                            break;
-                    }
+            if (data.empty()) {
+                return {data, data.end()};
+            }
+            switch(*iter) {
+                case e_val(syntax::object_open):
+                case e_val(syntax::array_open): {
+                    return end_of_container();
                 }
-                return {data, it};
+                case e_val(syntax::string_delimiter):
+                default:
+                    return end_of_token();
             }
         }
         constexpr bool operator==(syntax c) const {
@@ -138,7 +163,7 @@ template <typename char_t> class json_view {
         }
         constexpr iterator& operator++() {
             if (!data.empty()) {
-                for (; iter <= (data.end() - 1UL); ++iter) {
+                for (; iter <= (data.end() - 1UL); iter = fetch(data, iter).next()) {
                     switch(*iter) {
                         case e_val(syntax::object_close):
                         case e_val(syntax::array_close):
