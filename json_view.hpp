@@ -5,16 +5,11 @@
 #include <charconv>
 #include <iterator>
 #include <ostream>
-#include <regex>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
 template <typename char_t> class json_view {
-    template <typename enum_class_t>
-    constexpr inline static char_t e_val(enum_class_t&& val) {
-        return static_cast<std::underlying_type_t<std::decay_t<enum_class_t>>>(std::forward<enum_class_t>(val));
-    }
     constexpr inline static bool constexpr_iswspace(char_t c) {
         constexpr std::array wspace{' ', '\n', '\r', '\f', '\v', '\t'};
         return std::any_of(wspace.begin(), wspace.end(), [c](auto wc) { return c == wc; });
@@ -54,78 +49,70 @@ template <typename char_t> class json_view {
             return fetch(data, iter + 1UL).first();
         }
         constexpr fetch next(syntax s) const {
-            return {data, std::find_if(iter + 1UL, data.end(), [s](char_t c){ return c == e_val(s); })};
+            return {data, std::find_if(iter + 1UL, data.end(), [s](char_t c){ return c == static_cast<char_t>(s); })};
         }
         constexpr fetch end_of_string() const {
             for (auto it = iter + 1UL; it <= data.end(); ++it) {
-                if (*it == e_val(syntax::escape)) {
+                if (*it == static_cast<char_t>(syntax::escape)) {
                     ++it;
-                } else if (*it == e_val(syntax::string_delimiter)) {
+                } else if (*it == static_cast<char_t>(syntax::string_delimiter)) {
                     return {data, it};
                 }
             }
             return {data, data.end()};
         }
-        constexpr fetch end_of_token() const {
+        constexpr fetch end_of_value() const {
             if (!data.empty()) {
-                if (*iter == e_val(syntax::string_delimiter)) {
-                    return end_of_string();
-                } else {
-                    auto it = std::find_if(iter, data.end(), [](char_t c){
-                        constexpr std::array end{syntax::array_close, syntax::object_close, syntax::comma};
-                        return constexpr_iswspace(c) || std::any_of(end.begin(), end.end(), [c](auto s) { return c == e_val(s); });
-                    });
-                    return {data, it - 1UL};
-                }
+                auto it = std::find_if(iter, data.end(), [](char_t c){
+                    constexpr std::array end{syntax::array_close, syntax::object_close, syntax::comma};
+                    return constexpr_iswspace(c) || std::any_of(end.begin(), end.end(), [c](auto s) { return c == static_cast<char_t>(s); });
+                });
+                return {data, (it - 1UL)};
             }
             return {data, data.end()};
         }
-        constexpr fetch end_of_container() const {
+        constexpr fetch end_of_structure() const {
             int depth{0};
-            auto it = iter;
-            for (; it <= data.end(); ++it) {
+            for (auto it = iter; it <= data.end(); ++it) {
                 switch(*it) {
-                    case e_val(syntax::string_delimiter):
+                    case static_cast<char_t>(syntax::string_delimiter):
                         it = fetch(data, it).end_of_string();
                         break;
-                    case e_val(syntax::object_open):
-                    case e_val(syntax::array_open):
+                    case static_cast<char_t>(syntax::object_open):
+                    case static_cast<char_t>(syntax::array_open):
                         ++depth;
                         break;
-                    case e_val(syntax::object_close):
-                    case e_val(syntax::array_close):
+                    case static_cast<char_t>(syntax::object_close):
+                    case static_cast<char_t>(syntax::array_close):
                         if (--depth <= 0) {
                             return {data, it};
                         }
                         break;
-                    case e_val(syntax::comma):
+                    case static_cast<char_t>(syntax::comma):
                         if (depth <= 0) {
                             return {data, it - 1UL};
                         }
                         break;
-                    case e_val(syntax::colon):
-                    default:
-                        break;
                 }
             }
-            return {data, it};
+            return {data, data.end()};
         }
         constexpr fetch end_of_section() const {
-            if (data.empty()) {
-                return {data, data.end()};
-            }
-            switch(*iter) {
-                case e_val(syntax::object_open):
-                case e_val(syntax::array_open): {
-                    return end_of_container();
+            if (!data.empty()) {
+                switch(*iter) {
+                    case static_cast<char_t>(syntax::object_open):
+                    case static_cast<char_t>(syntax::array_open):
+                        return end_of_structure();
+                    case static_cast<char_t>(syntax::string_delimiter):
+                        return end_of_string();
+                    default:
+                        return end_of_value();
                 }
-                case e_val(syntax::string_delimiter):
-                default:
-                    return end_of_token();
             }
+            return {data, data.end()};
         }
         constexpr bool operator==(syntax c) const {
-            return (iter != data.end()) && (*iter == e_val(c));
+            return (iter != data.end()) && (*iter == static_cast<char_t>(c));
         }
         constexpr bool operator!=(syntax c) const {
             return !operator==(c);
@@ -165,16 +152,16 @@ template <typename char_t> class json_view {
             if (!data.empty()) {
                 for (; iter <= (data.end() - 1UL); iter = fetch(data, iter).next()) {
                     switch(*iter) {
-                        case e_val(syntax::object_close):
-                        case e_val(syntax::array_close):
-                        case e_val(syntax::colon):
+                        case static_cast<char_t>(syntax::object_close):
+                        case static_cast<char_t>(syntax::array_close):
+                        case static_cast<char_t>(syntax::colon):
                             break;
-                        case e_val(syntax::comma):
+                        case static_cast<char_t>(syntax::comma):
                             iter = fetch(data, ++iter).first();
                             return *this;
-                        case e_val(syntax::string_delimiter):
-                        case e_val(syntax::object_open):
-                        case e_val(syntax::array_open):
+                        case static_cast<char_t>(syntax::string_delimiter):
+                        case static_cast<char_t>(syntax::object_open):
+                        case static_cast<char_t>(syntax::array_open):
                         default:
                             iter = fetch(data, iter).end_of_section();
                             break;
@@ -204,7 +191,7 @@ public:
     }
     constexpr iterator begin() const {
         if (!data.empty()) {
-            if ((data.front() == e_val(syntax::object_open)) || (data.front() == e_val(syntax::array_open))) {
+            if ((data.front() == static_cast<char_t>(syntax::object_open)) || (data.front() == static_cast<char_t>(syntax::array_open))) {
                 return {data, fetch(data).next()};
             }
         }
@@ -251,81 +238,92 @@ public:
     constexpr json_view operator[](std::size_t index) const {
         return at(index);
     }
-    constexpr std::basic_string_view<char_t> string_view() const {
+    constexpr bool is_object() const {
+        return (!data.empty()) && (data.front() == static_cast<char_t>(syntax::object_open)) && (data.back() == static_cast<char_t>(syntax::object_close));
+    }
+    constexpr bool is_array() const {
+        return (!data.empty()) && (data.front() == static_cast<char_t>(syntax::array_open)) && (data.back() == static_cast<char_t>(syntax::array_close));
+    }
+    constexpr bool is_string() const {
+        return (!data.empty()) && (key().data.empty()) && (data.front() == static_cast<char_t>(syntax::string_delimiter));
+    }
+    constexpr bool is_boolean() const {
+        constexpr literal_helper true_value{"true"};
+        constexpr literal_helper false_value{"false"};
+        auto view = as_string_view();
+        return (view == static_cast<const char_t*>(true_value)) ||
+               (view == static_cast<const char_t*>(false_value));
+    }
+    template<typename T = int>
+    constexpr bool is_number() const {
         if (!data.empty()) {
-            fetch last{fetch(data).end_of_section()};
-            if (data.front() == e_val(syntax::string_delimiter)) {
-                return substr((data.begin() + 1UL), (static_cast<std::basic_string_view<char_t>::iterator>(last) - 1UL));
+            if constexpr (std::is_floating_point_v<T>) {
+                constexpr literal_helper allowed{"1234567890-+.eE"}; /// rough estimation
+                return as_string_view().find_first_not_of(static_cast<const char_t*>(allowed)) == std::basic_string_view<char_t>::npos;
+            } else {
+                constexpr literal_helper allowed{"1234567890-+"}; /// rough estimation
+                return as_string_view().find_first_not_of(static_cast<const char_t*>(allowed)) == std::basic_string_view<char_t>::npos;
             }
-            return substr(data.begin(), last);
         }
-        return data;
+        return false;
+    }
+    constexpr bool is_null() const {
+        constexpr literal_helper null_value{"null"};
+        return as_string_view() == static_cast<const char_t*>(null_value);
+    }
+    constexpr std::basic_string_view<char_t> as_string_view() const {
+        if (!data.empty()) {
+            return substr(data.begin(), fetch(data).end_of_section());
+        }
+        return std::basic_string_view<char_t>{};
+    }
+    constexpr std::basic_string_view<char_t> string_view() const {
+        if (!data.empty() && is_string()) {
+            return substr((data.begin() + 1UL), (static_cast<std::basic_string_view<char_t>::iterator>(fetch(data).end_of_section()) - 1UL));
+        }
+        return std::basic_string_view<char_t>{};
     }
     constexpr std::basic_string<char_t> string() const {
         return std::basic_string<char_t>(string_view());
     }
     constexpr bool boolean() const {
-        if (is_boolean()) {
-            constexpr literal_helper lit{"true"};
-            return (string_view() == static_cast<const char_t*>(lit));
-        }
-        return false;
+        constexpr literal_helper true_value{"true"};
+        return as_string_view() == static_cast<const char_t*>(true_value);
     }
-    constexpr int64_t integer() const {
-        int64_t result{0};
-        auto&& [ptr, error] {std::from_chars(string_view().begin(), string_view().end(), result)};
+    template <typename T = int, typename = std::enable_if_t<std::is_integral_v<T> || std::is_floating_point_v<T>>>
+    constexpr T number() const {
+        T result{};
+        auto&& [ptr, error] {std::from_chars(as_string_view().begin(), as_string_view().end(), result)};
         return ((error != std::errc::invalid_argument) && (ptr == data.end())) ? result : 0;
-    }
-    constexpr float floating_point() const {
-        if (is_floating_point()) {
-            return std::stof(string());
-        }
-        return 0;
-    }
-    constexpr bool is_object() const {
-        return (!data.empty()) && (data.front() == e_val(syntax::object_open)) && (data.back() == e_val(syntax::object_close));
-    }
-    constexpr bool is_array() const {
-        return (!data.empty()) && (data.front() == e_val(syntax::array_open)) && (data.back() == e_val(syntax::array_close));
-    }
-    constexpr bool is_string() const {
-        return (key().data.empty()) && (!data.empty()) && (data.front() == e_val(syntax::string_delimiter));
-    }
-    constexpr bool is_boolean() const {
-        constexpr literal_helper r{"true|false"};
-        return std::regex_match(data.begin(), data.end(), std::basic_regex<char_t>{r});
-    }
-    constexpr bool is_integer() const {
-        constexpr literal_helper r{"^-?\\d+"};
-        return std::regex_match(data.begin(), data.end(), std::basic_regex<char_t>{r});
-    }
-    constexpr bool is_floating_point() const {
-        constexpr literal_helper r{"^[-]?(0|[1-9][0-9]*)(\\.[0-9]+)([eE][+-]?[0-9]+)?$"};
-        return std::regex_match(data.begin(), data.end(), std::basic_regex<char_t>{r});
-    }
-    constexpr operator std::basic_string<char_t>() const {
-        return string();
     }
     constexpr friend std::basic_ostream<char_t>& operator<<(std::basic_ostream<char_t>& os, const json_view& rhs) {
         return os << rhs.data;
     }
-    template<std::size_t index> std::tuple_element_t<index, json_view> get() { /// structured binding
+    template<std::size_t index> std::tuple_element_t<index, json_view> get() const { /// structured binding
         if constexpr (index == 0UL) {
             return key();
         }
         return value();
     }
 private:
-    constexpr std::basic_string_view<char_t> substr(const std::basic_string_view<char_t>::iterator& first, const std::basic_string_view<char_t>::iterator& last) const {
+    constexpr std::basic_string_view<char_t> substr(const std::basic_string_view<char_t>::iterator& first,
+                                                    const std::basic_string_view<char_t>::iterator& last) const {
         return {first, std::min(data.end(), last + 1U)};
     }
 private:
     std::basic_string_view<char_t> data;
 };
-template<>
-inline int64_t json_view<wchar_t>::integer() const {
-    if (is_integer()) {
-        return std::stoll(string());
+template<> template<>
+inline int json_view<wchar_t>::number<int>() const {
+    if ((!data.empty()) && is_number<int>()) {
+        return std::stoi(std::basic_string<wchar_t>{as_string_view()});
+    }
+    return 0;
+}
+template<> template<>
+inline float json_view<wchar_t>::number<float>() const {
+    if ((!data.empty()) && is_number<float>()) {
+        return std::stof(std::basic_string<wchar_t>{as_string_view()});
     }
     return 0;
 }
